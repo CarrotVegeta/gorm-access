@@ -1,4 +1,4 @@
-package database
+package dac
 
 import (
 	"fmt"
@@ -13,9 +13,45 @@ const (
 	Or  JoinerType = "OR"
 )
 
+type Operator string
+
+// 操作符常量
+const (
+	Equal       Operator = "equal"
+	NotEqual    Operator = "notEqual"
+	GreaterThan Operator = "greaterThan"
+	LessThan    Operator = "lessThan"
+	Like        Operator = "like"
+	In          Operator = "in"
+	NotIn       Operator = "notIn"
+	IsNull      Operator = "isNull"
+	IsNotNull   Operator = "isNotNull"
+	NotLike     Operator = "notLike"
+	NotBetween  Operator = "notBetween"
+	Between     Operator = "between"
+)
+
+// OperatorI 定义了操作符接口
+type OperatorI interface {
+	BuildQuery(condition Condition, query *QueryFilter)
+}
+
+var OperatorMap = map[DBType]OperatorI{}
+
+func RegisterOperator(dbType DBType, operator OperatorI) {
+	if OperatorMap == nil {
+		OperatorMap = make(map[DBType]OperatorI)
+	}
+	OperatorMap[dbType] = operator
+}
+func GetOperatorI(dbType DBType) OperatorI {
+	return OperatorMap[dbType]
+}
+
 // Condition 条件结构体
 type Condition struct {
-	Field     string      // 字段名
+	Field     any // 字段名
+	Key       string
 	Operator  Operator    // 操作符
 	Value     interface{} // 值
 	Joiner    JoinerType  // 条件连接词：AND 或 OR
@@ -25,7 +61,7 @@ type Condition struct {
 func NewCondition() *Condition {
 	return &Condition{}
 }
-func (cb *Condition) Build(field string, operator Operator, value string, joiner ...JoinerType) *Condition {
+func (cb *Condition) Build(field any, operator Operator, value any, joiner ...JoinerType) *Condition {
 	cb.Field = field
 	cb.Operator = operator
 	cb.Value = value
@@ -43,6 +79,10 @@ func (cb *Condition) SetSubGroups(subGroups *Condition) *Condition {
 type ConditionBuilder struct {
 	conditions []Condition
 	args       []interface{}
+}
+
+func NewConditionBuilder() *ConditionBuilder {
+	return &ConditionBuilder{}
 }
 
 // And 方法用于设置 AND 连接词
@@ -64,9 +104,16 @@ func (cb *ConditionBuilder) setJoiner(joiner JoinerType) *ConditionBuilder {
 }
 
 // AddCondition 方法用于添加条件
-func (cb *ConditionBuilder) AddCondition(condition Condition) {
+func (cb *ConditionBuilder) AddCondition(condition Condition) *ConditionBuilder {
 	cb.conditions = append(cb.conditions, condition)
+	return cb
 	//cb.args = append(cb.args, condition.Value)
+}
+
+// BuildCondition AddCondition 方法用于添加条件
+func (cb *ConditionBuilder) BuildCondition(field any, operator Operator, value any, joiner ...JoinerType) *ConditionBuilder {
+	cb.AddCondition(*NewCondition().Build(field, operator, value, joiner...))
+	return cb
 }
 
 // Append  方法用于添加条件
@@ -77,8 +124,14 @@ func (cb *ConditionBuilder) Append(builder ConditionBuilder) {
 
 // Build 方法用于生成 SQL 条件语句
 func (cb *ConditionBuilder) Build(dbType DBType) (string, []interface{}) {
+	if cb.conditions == nil {
+		return "", nil
+	}
 	var sqlConditions []string
 	for _, condition := range cb.conditions {
+		condition.Key = parseField(condition.Field, dbType)
+		//value 可能为数组什么的
+		condition.Value = parseValue(condition.Value, dbType)
 		qf := &QueryFilter{}
 		GetOperatorI(dbType).BuildQuery(condition, qf)
 		sqlConditions = append(sqlConditions, qf.Query)
@@ -98,43 +151,16 @@ func (cb *ConditionBuilder) Build(dbType DBType) (string, []interface{}) {
 	return fmt.Sprintf("(%s)", joinedConditions), cb.args
 }
 
-type Operator string
-
-// 操作符常量
-const (
-	Equal       Operator = "equal"
-	NotEqual    Operator = "notEqual"
-	GreaterThan Operator = "greaterThan"
-	LessThan    Operator = "lessThan"
-	Like        Operator = "like"
-)
-
-// OperatorI 定义了操作符接口
-type OperatorI interface {
-	BuildQuery(condition Condition, query *QueryFilter)
-}
-
-var OperatorMap = map[DBType]OperatorI{
-	Mysql: MysqlOperator{},
-}
-
-func GetOperatorI(dbType DBType) OperatorI {
-	return OperatorMap[dbType]
-}
-
-// 将条件添加到查询中
-func addConditions(db *gorm.DB, dbType DBType, builder ConditionBuilder) error {
+// 将条件添加到Where查询中
+func addWhereConditions(db *gorm.DB, dbType DBType, builder *ConditionBuilder) error {
 	query, args := builder.Build(dbType)
 	*db = *db.Where(query, args...)
 	return nil
 }
 
-// 检查条件是否合法
-func checkConditions(o Operator) error {
-	switch o {
-	case Equal, NotEqual, GreaterThan, LessThan, Like:
-	default:
-		return fmt.Errorf("不支持的操作符: %s", o)
-	}
+// 将条件添加到查询中
+func addHavingConditions(db *gorm.DB, dbType DBType, builder *ConditionBuilder) error {
+	query, args := builder.Build(dbType)
+	*db = *db.Having(query, args...)
 	return nil
 }

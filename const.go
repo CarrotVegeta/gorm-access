@@ -1,9 +1,9 @@
-package database
+package dac
 
 type DBType string
 
 const (
-	Clickhouse = "clickhouse"
-	Mysql      = "mysql"
-	Postgres   = "postgres"
+	Clickhouse DBType = "clickhouse"
+	Mysql      DBType = "mysql"
+	Postgres   DBType = "postgres"
 )
