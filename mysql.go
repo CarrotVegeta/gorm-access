@@ -29,11 +29,20 @@ func (m MysqlOperator) BuildQuery(condition Condition, qf *QueryFilter) {
 		m.NotEqual(condition, qf)
 	case GreaterThan:
 		m.GreaterThan(condition, qf)
+	case GreaterThanOrEqual:
+		m.GreaterThanOrEqual(condition, qf)
 	}
+}
+func (m MysqlOperator) GreaterThanOrEqual(condition Condition, qf *QueryFilter) {
+	qf.And(condition.Key+" >= ?", condition.Value)
 }
 func (m MysqlOperator) GreaterThan(condition Condition, qf *QueryFilter) {
 	qf.And(condition.Key+" > ?", condition.Value)
 }
+func (m MysqlOperator) LessThanOrEqual(condition Condition, qf *QueryFilter) {
+	qf.And(condition.Key+" <= ?", condition.Value)
+}
+
 func (m MysqlOperator) Equal(condition Condition, qf *QueryFilter) {
 	qf.And(condition.Key+" = ?", condition.Value)
 }
