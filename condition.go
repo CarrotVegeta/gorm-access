@@ -3,7 +3,6 @@ package dac
 import (
 	"fmt"
 	"gorm.io/gorm"
-	"strings"
 )
 
 type JoinerType string
@@ -17,18 +16,20 @@ type Operator string
 
 // 操作符常量
 const (
-	Equal       Operator = "equal"
-	NotEqual    Operator = "notEqual"
-	GreaterThan Operator = "greaterThan"
-	LessThan    Operator = "lessThan"
-	Like        Operator = "like"
-	In          Operator = "in"
-	NotIn       Operator = "notIn"
-	IsNull      Operator = "isNull"
-	IsNotNull   Operator = "isNotNull"
-	NotLike     Operator = "notLike"
-	NotBetween  Operator = "notBetween"
-	Between     Operator = "between"
+	Equal              Operator = "equal"
+	NotEqual           Operator = "notEqual"
+	GreaterThan        Operator = "greaterThan"
+	GreaterThanOrEqual Operator = "greaterThanOrEqual"
+	LessThanOrEqual    Operator = "lessThanOrEqual"
+	LessThan           Operator = "lessThan"
+	Like               Operator = "like"
+	In                 Operator = "in"
+	NotIn              Operator = "notIn"
+	IsNull             Operator = "isNull"
+	IsNotNull          Operator = "isNotNull"
+	NotLike            Operator = "notLike"
+	NotBetween         Operator = "notBetween"
+	Between            Operator = "between"
 )
 
 // OperatorI 定义了操作符接口
@@ -50,12 +51,11 @@ func GetOperatorI(dbType DBType) OperatorI {
 
 // Condition 条件结构体
 type Condition struct {
-	Field     any // 字段名
-	Key       string
-	Operator  Operator    // 操作符
-	Value     interface{} // 值
-	Joiner    JoinerType  // 条件连接词：AND 或 OR
-	SubGroups []Condition // 子条件组
+	Field    any // 字段名
+	Key      string
+	Operator Operator    // 操作符
+	Value    interface{} // 值
+	Joiner   JoinerType  // 条件连接词：AND 或 OR
 }
 
 func NewCondition() *Condition {
@@ -70,9 +70,22 @@ func (cb *Condition) Build(field any, operator Operator, value any, joiner ...Jo
 	}
 	return cb
 }
-func (cb *Condition) SetSubGroups(subGroups *Condition) *Condition {
-	cb.SubGroups = append(cb.SubGroups, *subGroups)
-	return cb
+
+type BuilderOption struct {
+	builders []*ConditionBuilder
+}
+
+func NewBuilderOption() *BuilderOption {
+	return &BuilderOption{builders: make([]*ConditionBuilder, 0)}
+}
+func (b *BuilderOption) NewBuilder() *ConditionBuilder {
+	builder := &ConditionBuilder{}
+	b.builders = append(b.builders, builder)
+	return builder
+}
+func (b *BuilderOption) AppendBuilder(builder *ConditionBuilder) *BuilderOption {
+	b.builders = append(b.builders, builder)
+	return b
 }
 
 // ConditionBuilder 用于生成 SQL 条件语句的结构体
@@ -104,15 +117,21 @@ func (cb *ConditionBuilder) setJoiner(joiner JoinerType) *ConditionBuilder {
 }
 
 // AddCondition 方法用于添加条件
-func (cb *ConditionBuilder) AddCondition(condition Condition) *ConditionBuilder {
-	cb.conditions = append(cb.conditions, condition)
+func (cb *ConditionBuilder) AddCondition(condition *Condition) *ConditionBuilder {
+	if condition.Field == "" {
+		return cb
+	}
+	cb.conditions = append(cb.conditions, *condition)
 	return cb
 	//cb.args = append(cb.args, condition.Value)
 }
 
-// BuildCondition AddCondition 方法用于添加条件
-func (cb *ConditionBuilder) BuildCondition(field any, operator Operator, value any, joiner ...JoinerType) *ConditionBuilder {
-	cb.AddCondition(*NewCondition().Build(field, operator, value, joiner...))
+// AppendCondition AddCondition 方法用于添加条件
+func (cb *ConditionBuilder) AppendCondition(field any, operator Operator, value any, joiner ...JoinerType) *ConditionBuilder {
+	if len(joiner) == 0 {
+		joiner = append(joiner, And)
+	}
+	cb.AddCondition(NewCondition().Build(field, operator, value, joiner...))
 	return cb
 }
 
@@ -127,35 +146,38 @@ func (cb *ConditionBuilder) Build(dbType DBType) (string, []interface{}) {
 	if cb.conditions == nil {
 		return "", nil
 	}
-	var sqlConditions []string
+	qfCondition := &QueryFilter{}
 	for _, condition := range cb.conditions {
 		condition.Key = parseField(condition.Field, dbType)
 		//value 可能为数组什么的
 		condition.Value = parseValue(condition.Value, dbType)
 		qf := &QueryFilter{}
 		GetOperatorI(dbType).BuildQuery(condition, qf)
-		sqlConditions = append(sqlConditions, qf.Query)
-		cb.args = append(cb.args, qf.Args...)
-		// 处理子条件
-		if len(condition.SubGroups) > 0 {
-			subConditionBuilder := &ConditionBuilder{}
-			for _, subCondition := range condition.SubGroups {
-				subConditionBuilder.AddCondition(subCondition)
-			}
-			subSQLCondition, args := subConditionBuilder.Build(dbType)
-			sqlConditions = append(sqlConditions, fmt.Sprintf("(%s)", subSQLCondition))
-			cb.args = append(cb.args, args...)
+		if condition.Joiner == "" {
+			condition.Joiner = And
+		}
+		if condition.Joiner == And {
+			qfCondition.And(qf.Query, qf.Args...)
+		} else {
+			qfCondition.Or(qf.Query, qf.Args...)
 		}
 	}
-	joinedConditions := strings.Join(sqlConditions, fmt.Sprintf(" %s ", cb.conditions[0].Joiner))
-	return fmt.Sprintf("(%s)", joinedConditions), cb.args
+	//joinedConditions := strings.Join(sqlConditions, fmt.Sprintf(" %s ", cb.conditions[0].Joiner))
+	if qfCondition.Query == "" {
+		return "", nil
+	}
+	return fmt.Sprintf("%s", qfCondition.Query), qfCondition.Args
 }
 
 // 将条件添加到Where查询中
-func addWhereConditions(db *gorm.DB, dbType DBType, builder *ConditionBuilder) error {
-	query, args := builder.Build(dbType)
-	*db = *db.Where(query, args...)
-	return nil
+func buildWhereConditions(db *gorm.DB, dbType DBType, buildOption *BuilderOption) *gorm.DB {
+	for _, v := range buildOption.builders {
+		query, args := v.Build(dbType)
+		if query != "" {
+			db = db.Where(query, args...)
+		}
+	}
+	return db
 }
 
 // 将条件添加到查询中

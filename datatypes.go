@@ -6,8 +6,9 @@ import (
 )
 
 const (
-	TYPE_INT       = "int"       // 整数类型
-	TYPE_BIGINT    = "bigint"    // 长整型
+	TYPE_INT       = "int"    // 整数类型
+	TYPE_BIGINT    = "bigint" // 长整型
+	TYPE_TINYINT   = "tinyint"
 	TYPE_DECIMAL   = "decimal"   // 十进制数
 	TYPE_NUMERIC   = "numeric"   // 数值
 	TYPE_REAL      = "real"      // 实数
@@ -16,33 +17,49 @@ const (
 	TYPE_BOOLEAN   = "boolean"   // 布尔型
 	TYPE_CHAR      = "char"      // 字符串（定长）
 	TYPE_VARCHAR   = "varchar"   // 字符串（变长）
-	TYPE_TEXT      = "text"      // 文本
 	TYPE_DATE      = "date"      // 日期
 	TYPE_TIME      = "time"      // 时间
 	TYPE_TIMESTAMP = "timestamp" // 时间戳
 	TYPE_INTERVAL  = "interval"  // 时间间隔
 	TYPE_BYTEA     = "bytea"     // 二进制数据
 	TYPE_UUID      = "uuid"      // UUID
-	TYPE
+	//不受其他数据库支持的字段类型
+	TYPE_TEXT      = "text" // 文本
+	TYPE_LONG_TEXT = "longtext"
+	TYPE_ENUM      = "enum"
+	TYPE_BLOB      = "blob"
 )
 
+func ReplaceFieldType(dbType DBType, fieldType string) string {
+	switch dbType {
+	case Mysql:
+		switch fieldType {
+		case "text":
+			return "customtype"
+		}
+	case Clickhouse:
+		return ""
+	}
+	return ""
+}
+
 // IsDatabaseTypeSupported 检查数据库类型是否受支持
-func IsDatabaseTypeSupported(dbType string) bool {
+func IsDatabaseTypeSupported(fieldType string) bool {
 	databaseTypes := []string{
 		TYPE_INT, TYPE_BIGINT, TYPE_DECIMAL, TYPE_NUMERIC, TYPE_REAL,
 		TYPE_DOUBLE, TYPE_SMALLINT, TYPE_BOOLEAN, TYPE_CHAR, TYPE_VARCHAR,
 		TYPE_TEXT, TYPE_DATE, TYPE_TIME, TYPE_TIMESTAMP, TYPE_INTERVAL,
-		TYPE_BYTEA, TYPE_UUID,
+		TYPE_BYTEA, TYPE_UUID, TYPE_TINYINT, TYPE_LONG_TEXT, TYPE_ENUM, TYPE_BLOB,
 	}
 
 	// 匹配 dbType 中的类型名称部分，忽略括号和冒号后面的内容
 	re := regexp.MustCompile(`^(\w+)[(:]`)
-	match := re.FindStringSubmatch(dbType)
+	match := re.FindStringSubmatch(fieldType)
 	if len(match) >= 2 {
-		dbType = match[1]
+		fieldType = match[1]
 	}
 	for _, databaseType := range databaseTypes {
-		if strings.EqualFold(dbType, databaseType) {
+		if strings.EqualFold(fieldType, databaseType) {
 			return true
 		}
 	}

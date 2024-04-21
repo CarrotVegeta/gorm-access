@@ -72,7 +72,7 @@ func (d *Database) Table(name string) *Database {
 func (d *Database) AutoMigrate(dst ...interface{}) error {
 	//判断是否为支持的数据类型,如果不支持则返回错误
 	for _, v := range dst {
-		if err := autoMigrateStruct(reflect.TypeOf(v).Elem()); err != nil {
+		if err := autoMigrateStruct(d.dbType, reflect.TypeOf(v).Elem()); err != nil {
 			return err
 		}
 	}
@@ -80,13 +80,13 @@ func (d *Database) AutoMigrate(dst ...interface{}) error {
 }
 
 // autoMigrateStruct 递归解析结构体
-func autoMigrateStruct(t reflect.Type) error {
+func autoMigrateStruct(dbType DBType, t reflect.Type) error {
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
 
 		// 解析内嵌结构体
 		if field.Anonymous && field.Type.Kind() == reflect.Struct {
-			if err := autoMigrateStruct(field.Type); err != nil {
+			if err := autoMigrateStruct(dbType, field.Type); err != nil {
 				return err
 			}
 			continue
@@ -102,6 +102,8 @@ func autoMigrateStruct(t reflect.Type) error {
 			if !IsDatabaseTypeSupported(typeValue) {
 				return fmt.Errorf("Field %s of struct %s has unsupported tag type %s\n", field.Name, t.Name(), typeValue)
 			}
+			newTag := "gorm:" + ReplaceFieldType(dbType, typeValue)
+			field.Tag = reflect.StructTag(newTag)
 		} else {
 			fieldType := field.Type.Kind().String()
 			if field.Type.Kind() == reflect.Slice {
@@ -128,17 +130,37 @@ func unaliasType(t reflect.Type) reflect.Type {
 }
 
 // Where 构建查询条件
-func (d *Database) Where(builder *ConditionBuilder) *Database {
-	err := addWhereConditions(d.db, d.dbType, builder)
-	if err != nil {
-		d.err = err
-	}
+func (d *Database) Where(buildOption *BuilderOption) *Database {
+	d.db = buildWhereConditions(d.db, d.dbType, buildOption)
 	return d
 }
 
 // Find 查询
 func (d *Database) Find(out interface{}) *Database {
 	return d.useSourceDB(d.db.Find(out))
+}
+
+// Create 创建
+func (d *Database) Create(out interface{}) *Database {
+	return d.useSourceDB(d.db.Create(out))
+}
+func (d *Database) Save(out interface{}) *Database {
+	return d.useSourceDB(d.db.Save(out))
+}
+
+// Updates  根据 `struct` 更新属性，只会更新非零值的字段
+func (d *Database) Updates(out interface{}) *Database {
+	return d.useSourceDB(d.db.Updates(out))
+}
+
+// Update 更新单个列
+func (d *Database) Update(column string, value interface{}) *Database {
+	return d.useSourceDB(d.db.Update(column, value))
+}
+
+// Delete  删除
+func (d *Database) Delete(out interface{}) *Database {
+	return d.useSourceDB(d.db.Delete(out))
 }
 
 // Having having条件查询
@@ -173,6 +195,14 @@ func (d *Database) Count(count *int64) *Database {
 // Joins 连接查询
 func (d *Database) Joins(query string, args ...interface{}) *Database {
 	d.useSourceDB(d.db.Joins(query, args...))
+	return d
+}
+func (d *Database) Join(tableWithAlias, condition string) *Database {
+	d.useSourceDB(d.db.Joins("JOIN " + tableWithAlias + " on " + condition))
+	return d
+}
+func (d *Database) Preload(query string, args ...interface{}) *Database {
+	d.useSourceDB(d.db.Preload(query, args...))
 	return d
 }
 
@@ -225,19 +255,18 @@ func (d *Database) Error() error {
 		err = d.db.Error
 	}
 	if err != nil {
-		PrintCallerInfo()
+		PrintCallerInfo(err)
 	}
 	return err
 }
 
 // PrintCallerInfo 打印调用者信息
-func PrintCallerInfo() {
+func PrintCallerInfo(err error) {
 	// 获取调用者信息
 	_, file, line, ok := runtime.Caller(2)
 	if !ok {
 		fmt.Println("Failed to retrieve caller information")
 		return
 	}
-
-	fmt.Printf("Caller file: %s, line: %d\n", file, line)
+	fmt.Printf("Caller file: %s, line: %d", file, line)
 }
