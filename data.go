@@ -106,7 +106,7 @@ func autoMigrateStruct(dbType DBType, t reflect.Type) error {
 			field.Tag = reflect.StructTag(newTag)
 		} else {
 			fieldType := field.Type.Kind().String()
-			if field.Type.Kind() == reflect.Slice {
+			if field.Type.Kind() == reflect.Slice || field.Tag.Get("dac") == "-" {
 				continue
 			}
 			if field.Type.Kind() == reflect.Struct {
@@ -201,6 +201,10 @@ func (d *Database) Join(tableWithAlias, condition string) *Database {
 	d.useSourceDB(d.db.Joins("JOIN " + tableWithAlias + " on " + condition))
 	return d
 }
+func (d *Database) LeftJoin(tableWithAlias, condition string) *Database {
+	d.useSourceDB(d.db.Joins("LEFT JOIN " + tableWithAlias + " on " + condition))
+	return d
+}
 func (d *Database) Preload(query string, args ...interface{}) *Database {
 	d.useSourceDB(d.db.Preload(query, args...))
 	return d
@@ -219,6 +223,19 @@ func (d *Database) Select(fields ...any) *Database {
 		}
 	}
 	return d.useSourceDB(d.db.Select(query))
+}
+
+// Pluck 查询字段
+func (d *Database) Pluck(column any, desc any) *Database {
+	var query string
+	field := parseField(column, d.dbType)
+	//生成查询 sql
+	if query == "" {
+		query = field
+	} else {
+		query += "," + field
+	}
+	return d.useSourceDB(d.db.Pluck(query, desc))
 }
 
 // Model 设置模型
