@@ -3,6 +3,7 @@ package dac
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -13,6 +14,7 @@ const (
 	MaxFunc           FunctionType = "max"
 	MinFunc           FunctionType = "min"
 	CountFunc         FunctionType = "count"
+	CountNoFieldFunc  FunctionType = "count_no_field"
 	CountDistinctFunc FunctionType = "count_distinct"
 	AvgFunc           FunctionType = "avg"
 	SumFunc           FunctionType = "sum"
@@ -21,6 +23,8 @@ const (
 	LowerFunc         FunctionType = "lower"
 	ConcatFunc        FunctionType = "concat"
 	LengthFunc        FunctionType = "length" // MySQL中为length，PostgresSQL中为LENGTH
+	ToDateTimeFunc    FunctionType = "toDateTime"
+	DistinctFunc      FunctionType = "distinct"
 )
 
 // 将上述方法常量转换成一个 map
@@ -36,6 +40,8 @@ var functionMap = map[FunctionType]string{
 	LowerFunc:         "lower(%s)",
 	ConcatFunc:        "concat(%s)",
 	LengthFunc:        "length(%s)",
+	ToDateTimeFunc:    "toDateTime(%s)",
+	DistinctFunc:      "distinct %s",
 }
 
 // GetFunctionSQL 获取 functionMap 中的值
@@ -56,6 +62,8 @@ type FunctionProvider interface {
 	Lower() string
 	Concat() string
 	Length() string
+	ToDateTime() string
+	Distinct() string
 }
 
 // 定义全局 map
@@ -101,6 +109,10 @@ func GetFunctionHandlerSQL(function FunctionType, fp FunctionProvider) string {
 		return fp.Concat()
 	case LengthFunc:
 		return fp.Length()
+	case ToDateTimeFunc:
+		return fp.ToDateTime()
+	case DistinctFunc:
+		return fp.Distinct()
 	default:
 		return ""
 	}
@@ -114,7 +126,7 @@ func IsFunctionTypeValid(function FunctionType) bool {
 
 // Field 结构表示一个字段，可能包含聚合函数
 type Field struct {
-	Name     string       // 字段名
+	Name     any          // 字段名
 	function FunctionType // 聚合函数
 	Alias    string       //别名
 }
@@ -131,14 +143,16 @@ func (f *Field) As(as string) *Field {
 
 // GenerateSelectSQL 生成 SELECT 语句
 func (f *Field) GenerateSelectSQL(fp string) string {
-	f.Name = convertToSQLFormat(f.Name)
+	if f.Name != "" {
+		f.Name = convertToSQLFormat(f.Name)
+	}
 	if f.function != "" {
 		f.Name = fmt.Sprintf(fp, f.Name)
 	}
 	if f.Alias != "" {
-		f.Name += " as " + f.Alias
+		f.Name = fmt.Sprintf("%s as %s", f.Name, f.Alias)
 	}
-	return f.Name
+	return fmt.Sprintf("%v", f.Name)
 }
 
 // validateFunction 检查聚合函数是否合法
@@ -155,7 +169,9 @@ func (f *Field) validateFunction() error {
 func (f *Field) Max() string {
 	return GetFunctionSQL(MaxFunc)
 }
-
+func (f *Field) Distinct() string {
+	return GetFunctionSQL(DistinctFunc)
+}
 func (f *Field) Min() string {
 	return GetFunctionSQL(MinFunc)
 }
@@ -170,6 +186,10 @@ func (f *Field) CountDistinct() string {
 
 func (f *Field) Avg() string {
 	return GetFunctionSQL(AvgFunc)
+}
+
+func (f *Field) ToDateTime() string {
+	return GetFunctionSQL(ToDateTimeFunc)
 }
 
 func (f *Field) Sum() string {
@@ -199,12 +219,16 @@ func (f *Field) Length() string {
 func Max(field string) *Field {
 	return &Field{Name: field, function: MaxFunc}
 }
-
+func ToDateTime(field string) *Field {
+	return &Field{Name: field, function: ToDateTimeFunc}
+}
 func Min(field string) *Field {
 	return &Field{Name: field, function: MinFunc}
 }
-
-func Count(field string) *Field {
+func Distinct(field string) *Field {
+	return &Field{Name: field, function: DistinctFunc}
+}
+func Count(field any) *Field {
 	return &Field{Name: field, function: CountFunc}
 }
 
@@ -243,9 +267,32 @@ func Concat(fields ...string) *Field {
 // 如果是其他类型，直接返回
 func parseField(param interface{}, dbType DBType) string {
 	if value, ok := param.(string); ok {
-		if !checkFirstLast(value, "`") {
-			return convertToSQLFormat(value)
+		strs := splitSelectFieldStr(value)
+		selectSqlStr := NewSelectStr("")
+		for _, v := range strs {
+			if !checkFirstLast(v, "`") {
+				//检查是否存在 as条件
+				// 定义一个正则表达式，匹配"as"前后都是空格的模式
+				re := regexp.MustCompile(`\b as \b`)
+				// 检查每个字符串是否匹配正则表达式
+				// 使用正则表达式找到所有匹配"as"的位置
+				matches := re.FindAllStringIndex(v, -1)
+				var sqlFormatStr string
+				if len(matches) > 0 {
+					part1 := v[:matches[0][0]]
+					str1 := convertToSQLFormat(part1)
+					part2 := v[matches[0][1]:]
+					str2 := convertToSQLFormat(part2)
+					sqlFormatStr = str1 + " as " + str2
+				} else {
+					sqlFormatStr = convertToSQLFormat(v)
+				}
+				selectSqlStr.Join(sqlFormatStr)
+				continue
+			}
+			selectSqlStr.Join(v)
 		}
+		return selectSqlStr.Value
 	}
 	if f, ok := param.(*Field); ok {
 		provider := GetDataFunctionProvider(dbType)
