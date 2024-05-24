@@ -6,16 +6,31 @@ import (
 )
 
 func TestConditionBuilder(t *testing.T) {
-	conditon := NewCondition()
-	conditon.Build("name", Equal, "John", And)
-	conditon.SetSubGroups(NewCondition().Build("city", Equal, "New York", Or))
-	conditon.SetSubGroups(NewCondition().Build("city", Equal, "Bei jing", Or))
-	// 创建 ConditionBuilder 实例
-	builder := &ConditionBuilder{}
-	// 添加条件
-	builder.AddCondition(*conditon)
+	conditon := NewConditionBuilder()
+	conditon.AppendCondition("name", Equal, "John", And)
+
+	sql, qf := conditon.Build(Mysql)
 	// 生成 SQL 条件语句
-	sqlConditions, args := builder.Build(Mysql)
-	fmt.Println("SQL 条件语句:", sqlConditions)
-	fmt.Println(args)
+	fmt.Printf("sql :%s", sql)
+	fmt.Printf("args:%v", qf)
+}
+
+type CountList struct {
+	Id    uint  `json:"id"`
+	Count int64 `json:"count"`
+}
+
+func TestCreate(t *testing.T) {
+	option := NewBuilderOption()
+	builder := NewConditionBuilder()
+	builder.AppendCondition("app_id", Equal, "APP123")
+	builder.AppendCondition("id", Equal, 1)
+	option.AppendBuilder(builder)
+	var cs []CountList
+	err := NewDatabase(Mysql).Use(nil).Where(option).Select("id", Count(1).As("count")).
+		Group("id").Find(&cs).Error()
+	if err != nil {
+		t.Logf(err.Error())
+	}
+	fmt.Println(cs)
 }
