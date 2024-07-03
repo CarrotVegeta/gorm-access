@@ -20,6 +20,7 @@ type MysqlOperator struct {
 func init() {
 	RegisterDatabase(Mysql, &MySQLDatabase{})
 	RegisterOperator(Mysql, &MysqlOperator{})
+	RegisterOperator(Clickhouse, &ClickhouseOperator{})
 }
 func (m MysqlOperator) BuildQuery(condition Condition, qf *QueryFilter) {
 	switch condition.Operator {
@@ -31,6 +32,10 @@ func (m MysqlOperator) BuildQuery(condition Condition, qf *QueryFilter) {
 		m.GreaterThan(condition, qf)
 	case GreaterThanOrEqual:
 		m.GreaterThanOrEqual(condition, qf)
+	case LessThanOrEqual:
+		m.LessThanOrEqual(condition, qf)
+	case In:
+		m.In(condition, qf)
 	}
 }
 func (m MysqlOperator) GreaterThanOrEqual(condition Condition, qf *QueryFilter) {
@@ -48,4 +53,7 @@ func (m MysqlOperator) Equal(condition Condition, qf *QueryFilter) {
 }
 func (m MysqlOperator) NotEqual(condition Condition, qf *QueryFilter) {
 	qf.And(condition.Key+" != ?", condition.Value)
+}
+func (m MysqlOperator) In(condition Condition, qf *QueryFilter) {
+	qf.And(condition.Key+" in (?)", condition.Value)
 }
