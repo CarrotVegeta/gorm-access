@@ -140,6 +140,11 @@ func (d *Database) Find(out interface{}) *Database {
 	return d.useSourceDB(d.db.Find(out))
 }
 
+// Unscoped 软链接
+func (d *Database) Unscoped() *Database {
+	return d.useSourceDB(d.db.Unscoped())
+}
+
 // Create 创建
 func (d *Database) Create(out interface{}) *Database {
 	return d.useSourceDB(d.db.Create(out))
@@ -163,6 +168,11 @@ func (d *Database) Delete(out interface{}) *Database {
 	return d.useSourceDB(d.db.Delete(out))
 }
 
+// HardDelete 硬删除
+func (d *Database) HardDelete(out interface{}) *Database {
+	return d.Unscoped().Delete(out)
+}
+
 // Having having条件查询
 func (d *Database) Having(builder *ConditionBuilder) *Database {
 	err := addHavingConditions(d.db, d.dbType, builder)
@@ -179,7 +189,7 @@ func (d *Database) Scan(out interface{}) *Database {
 
 // First 查询第一条
 func (d *Database) First(out interface{}) *Database {
-	return d
+	return d.useSourceDB(d.db.First(out))
 }
 
 // Last 查询最后一条
