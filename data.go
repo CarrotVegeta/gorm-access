@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"runtime"
 	"strings"
+	"sync"
 )
 
 // DataAccess 数据访问接口
@@ -21,23 +22,45 @@ type DataAccess interface {
 	Order(db *gorm.DB, order string) *gorm.DB
 }
 
-// 定义全局 map
-var registeredDataAccess map[DBType]DataAccess
+var (
+	registeredDataAccess map[DBType]DataAccess
+	mutex                sync.Mutex
+)
 
-// RegisterDatabase 注册不同数据库类型的方法
+// RegisterDatabase 注册数据库访问实例。
+// 该函数用于在系统中注册特定类型的数据库访问实例，使得系统能够根据注册的类型来访问不同的数据库。
+// dbType: 表示数据库的类型，用于区分不同的数据库访问方式。
+// dataAccess: 表示具体的数据库访问实例，实现了对特定类型数据库的访问操作。
+// RegisterDatabase
 func RegisterDatabase(dbType DBType, dataAccess DataAccess) {
+	// 使用互斥锁来保证并发安全，确保在注册过程中不会有其他线程修改registeredDataAccess。
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	// 如果还没有初始化registeredDataAccess，则进行初始化。
 	if registeredDataAccess == nil {
 		registeredDataAccess = make(map[DBType]DataAccess)
 	}
+	// 将特定类型的数据库访问实例注册到map中。
 	registeredDataAccess[dbType] = dataAccess
 }
 
-// GetDataAccess 方法根据外部传入的数据库类型执行相应的操作
+// GetDataAccess 根据数据库类型获取对应的数据访问对象。
+// dbType: 表示数据库类型的枚举值，用于指定所需的数据访问策略。
+// 返回值: 返回一个实现了数据访问接口的对象，如果找不到对应的对象，则返回nil。
+// 该函数使用互斥锁来确保并发安全，避免在注册表查询过程中发生数据竞争。
+// GetDataAccess
 func GetDataAccess(dbType DBType) DataAccess {
-	// getDataAccess 函数用于根据 dbType 获取对应的 dataAccess
+	// 加锁以确保并发安全
+	mutex.Lock()
+	defer mutex.Unlock() // 函数退出时自动解锁
+
+	// 尝试从注册表中查找指定类型的数据库数据访问对象
 	if dat, ok := registeredDataAccess[dbType]; ok {
+		// 如果找到，返回该对象
 		return dat
 	}
+	// 如果未找到，返回nil
 	return nil
 }
 
@@ -46,7 +69,6 @@ type Database struct {
 	db     *gorm.DB
 	dbType DBType
 	da     DataAccess
-	err    error
 }
 
 // NewDatabase 函数用于创建数据库实例
@@ -76,7 +98,10 @@ func (d *Database) AutoMigrate(dst ...interface{}) error {
 			return err
 		}
 	}
-	return d.db.AutoMigrate(dst...)
+	if err := d.db.AutoMigrate(dst...); err != nil {
+		return fmt.Errorf("auto migrate failed: %w", err)
+	}
+	return nil
 }
 
 // autoMigrateStruct 递归解析结构体
@@ -173,10 +198,7 @@ func (d *Database) HardDelete(out interface{}) *Database {
 
 // Having having条件查询
 func (d *Database) Having(builder *ConditionBuilder) *Database {
-	err := addHavingConditions(d.db, d.dbType, builder)
-	if err != nil {
-		d.err = err
-	}
+	addHavingConditions(d.db, d.dbType, builder)
 	return d
 }
 
@@ -220,30 +242,18 @@ func (d *Database) Preload(query string, args ...interface{}) *Database {
 
 // Select 查询字段
 func (d *Database) Select(fields ...any) *Database {
-	var query string
+	var parsedFields []string
 	for _, v := range fields {
-		field := parseField(v, d.dbType)
-		//生成查询 sql
-		if query == "" {
-			query = field
-		} else {
-			query += "," + field
-		}
+		parsedFields = append(parsedFields, parseField(v, d.dbType))
 	}
+	query := strings.Join(parsedFields, ", ")
 	return d.useSourceDB(d.db.Select(query))
 }
 
 // Pluck 查询字段
-func (d *Database) Pluck(column any, desc any) *Database {
-	var query string
+func (d *Database) Pluck(column any, result any) *Database {
 	field := parseField(column, d.dbType)
-	//生成查询 sql
-	if query == "" {
-		query = field
-	} else {
-		query += "," + field
-	}
-	return d.useSourceDB(d.db.Pluck(query, desc))
+	return d.useSourceDB(d.db.Pluck(field, result))
 }
 
 // Model 设置模型
@@ -274,11 +284,8 @@ func (d *Database) Order(order string) *Database {
 // Error 获取错误
 func (d *Database) Error() error {
 	var err error
-	if d.err != nil {
-		err = d.err
-	} else {
-		err = d.db.Error
-	}
+
+	err = d.db.Error
 	if err != nil {
 		PrintCallerInfo(err)
 	}
@@ -293,5 +300,5 @@ func PrintCallerInfo(err error) {
 		fmt.Println("Failed to retrieve caller information")
 		return
 	}
-	fmt.Printf("Caller file: %s, line: %d", file, line)
+	fmt.Printf("Error occurred in file: %s, line: %d. Error: %v\n", file, line, err)
 }

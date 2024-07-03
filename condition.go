@@ -181,8 +181,7 @@ func buildWhereConditions(db *gorm.DB, dbType DBType, buildOption *BuilderOption
 }
 
 // 将条件添加到查询中
-func addHavingConditions(db *gorm.DB, dbType DBType, builder *ConditionBuilder) error {
+func addHavingConditions(db *gorm.DB, dbType DBType, builder *ConditionBuilder) {
 	query, args := builder.Build(dbType)
 	*db = *db.Having(query, args...)
-	return nil
 }
