@@ -72,7 +72,7 @@ func (d *Database) Table(name string) *Database {
 func (d *Database) AutoMigrate(dst ...interface{}) error {
 	//判断是否为支持的数据类型,如果不支持则返回错误
 	for _, v := range dst {
-		if err := autoMigrateStruct(d.dbType, reflect.TypeOf(v).Elem()); err != nil {
+		if err := checkAndAdjustGormTags(d.dbType, reflect.TypeOf(v).Elem()); err != nil {
 			return err
 		}
 	}
@@ -80,13 +80,13 @@ func (d *Database) AutoMigrate(dst ...interface{}) error {
 }
 
 // autoMigrateStruct 递归解析结构体
-func autoMigrateStruct(dbType DBType, t reflect.Type) error {
+func checkAndAdjustGormTags(dbType DBType, t reflect.Type) error {
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
 
 		// 解析内嵌结构体
 		if field.Anonymous && field.Type.Kind() == reflect.Struct {
-			if err := autoMigrateStruct(dbType, field.Type); err != nil {
+			if err := checkAndAdjustGormTags(dbType, field.Type); err != nil {
 				return err
 			}
 			continue
@@ -102,8 +102,6 @@ func autoMigrateStruct(dbType DBType, t reflect.Type) error {
 			if !IsDatabaseTypeSupported(typeValue) {
 				return fmt.Errorf("Field %s of struct %s has unsupported tag type %s\n", field.Name, t.Name(), typeValue)
 			}
-			newTag := "gorm:" + ReplaceFieldType(dbType, typeValue)
-			field.Tag = reflect.StructTag(newTag)
 		} else {
 			fieldType := field.Type.Kind().String()
 			if field.Type.Kind() == reflect.Slice || field.Tag.Get("dac") == "-" {
