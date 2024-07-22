@@ -7,6 +7,8 @@ import (
 
 func init() {
 	RegisterDatabase(Clickhouse, &ClickHouseDatabase{})
+	RegisterOperator(Clickhouse, &ClickhouseOperator{})
+
 }
 
 // ClickHouseDatabase 结构体实现 ClickHouse 数据库访问方法
