@@ -25,18 +25,8 @@ func (m PostgresOperator) NotEqual(condition Condition, qf *QueryFilter) {
 	qf.And(condition.Key+" != ?", condition.Value)
 }
 
-type PostgresProvider struct {
-	Field
-}
-
 func init() {
 	RegisterDatabase(Postgres, &PostgresDatabase{})
 	RegisterOperator(Postgres, &PostgresOperator{})
-	RegisterFunctionProvider(Postgres, &PostgresProvider{})
-}
-func (p *PostgresProvider) Length() string {
-	return "LENGTH(%s)"
-}
-func (p *PostgresProvider) Max() string {
-	return "MAX(%s)"
+	//RegisterFunctionProvider(Postgres, &PostgresProvider{})
 }

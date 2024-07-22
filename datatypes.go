@@ -34,8 +34,13 @@ func ReplaceFieldType(dbType DBType, fieldType string) string {
 	switch dbType {
 	case Mysql:
 		switch fieldType {
-		case "text":
+		case TYPE_TEXT:
 			return "customtype"
+		}
+	case Postgres:
+		switch fieldType {
+		case TYPE_LONG_TEXT:
+			return TYPE_TEXT
 		}
 	case Clickhouse:
 		return ""
@@ -48,8 +53,8 @@ func IsDatabaseTypeSupported(fieldType string) bool {
 	databaseTypes := []string{
 		TYPE_INT, TYPE_BIGINT, TYPE_DECIMAL, TYPE_NUMERIC, TYPE_REAL,
 		TYPE_DOUBLE, TYPE_SMALLINT, TYPE_BOOLEAN, TYPE_CHAR, TYPE_VARCHAR,
-		TYPE_TEXT, TYPE_DATE, TYPE_TIME, TYPE_TIMESTAMP, TYPE_INTERVAL,
-		TYPE_BYTEA, TYPE_UUID, TYPE_TINYINT, TYPE_LONG_TEXT, TYPE_ENUM, TYPE_BLOB,
+		TYPE_DATE, TYPE_TIME, TYPE_TIMESTAMP, TYPE_INTERVAL,
+		TYPE_BYTEA, TYPE_UUID, TYPE_TINYINT, TYPE_LONG_TEXT, TYPE_TEXT, TYPE_ENUM, TYPE_BLOB,
 	}
 
 	// 匹配 dbType 中的类型名称部分，忽略括号和冒号后面的内容

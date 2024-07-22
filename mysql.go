@@ -1,6 +1,8 @@
 package dac
 
-import "gorm.io/gorm"
+import (
+	"gorm.io/gorm"
+)
 
 // MySQLDatabase 结构体实现 MySQL 数据库访问方法
 type MySQLDatabase struct {
@@ -20,7 +22,7 @@ type MysqlOperator struct {
 func init() {
 	RegisterDatabase(Mysql, &MySQLDatabase{})
 	RegisterOperator(Mysql, &MysqlOperator{})
-	RegisterOperator(Clickhouse, &ClickhouseOperator{})
+	//RegisterFunctionProvider(Mysql, &MysqlProvider{})
 }
 func (m MysqlOperator) BuildQuery(condition Condition, qf *QueryFilter) {
 	switch condition.Operator {

@@ -5,15 +5,32 @@ import (
 	"strings"
 )
 
-func convertToSQLFormat(input any) string {
-	if _, ok := input.(string); !ok {
-		return fmt.Sprintf("%d", input)
+func convertToSQLFormat(input interface{}) string {
+	switch v := input.(type) {
+	case string:
+		parts := strings.Split(v, ".")
+		if len(parts) == 2 {
+			return fmt.Sprintf("%s.%s", wrapIdentifier(parts[0]), wrapIdentifier(parts[1]))
+		}
+		return wrapIdentifier(v)
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+		return fmt.Sprintf("%d", v)
+	default:
+		fmt.Printf("unsupported input type: %T", input)
 	}
-	parts := strings.Split(input.(string), ".")
-	if len(parts) != 2 {
-		return fmt.Sprintf("`%s`", input)
+	return ""
+}
+
+// wrapIdentifier 根据数据库类型包裹标识符
+func wrapIdentifier(identifier string) string {
+	switch DB.DBType {
+	case Mysql:
+		return fmt.Sprintf("`%s`", identifier)
+	case Postgres:
+		return fmt.Sprintf(`"%s"`, identifier)
+	default:
+		return identifier // 默认返回原始标识符
 	}
-	return fmt.Sprintf("`%s`.`%s`", parts[0], parts[1])
 }
 func checkFirstLast(s, substr string) bool {
 	if len(s) < len(substr) {
@@ -32,8 +49,11 @@ type SelectStr struct {
 }
 
 // NewSelectStr 构造函数，用于创建一个新的 SelectStr 实例。
-func NewSelectStr(str string) *SelectStr {
-	return &SelectStr{Value: str}
+func NewSelectStr(str ...string) *SelectStr {
+	if len(str) > 0 {
+		return &SelectStr{Value: str[0]}
+	}
+	return &SelectStr{}
 }
 
 // Join 方法用于将当前实例与另一个字符串进行拼接。

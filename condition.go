@@ -51,7 +51,7 @@ func GetOperatorI(dbType DBType) OperatorI {
 
 // Condition 条件结构体
 type Condition struct {
-	Field    any // 字段名
+	Field    string // 字段名
 	Key      string
 	Operator Operator    // 操作符
 	Value    interface{} // 值
@@ -61,7 +61,7 @@ type Condition struct {
 func NewCondition() *Condition {
 	return &Condition{}
 }
-func (cb *Condition) Build(field any, operator Operator, value any, joiner ...JoinerType) *Condition {
+func (cb *Condition) Build(field string, operator Operator, value any, joiner ...JoinerType) *Condition {
 	cb.Field = field
 	cb.Operator = operator
 	cb.Value = value
@@ -127,7 +127,7 @@ func (cb *ConditionBuilder) AddCondition(condition *Condition) *ConditionBuilder
 }
 
 // AppendCondition AddCondition 方法用于添加条件
-func (cb *ConditionBuilder) AppendCondition(field any, operator Operator, value any, joiner ...JoinerType) *ConditionBuilder {
+func (cb *ConditionBuilder) AppendCondition(field string, operator Operator, value any, joiner ...JoinerType) *ConditionBuilder {
 	if len(joiner) == 0 {
 		joiner = append(joiner, And)
 	}
@@ -148,9 +148,10 @@ func (cb *ConditionBuilder) Build(dbType DBType) (string, []interface{}) {
 	}
 	qfCondition := &QueryFilter{}
 	for _, condition := range cb.conditions {
-		condition.Key = parseField(condition.Field, dbType)
+		//condition.Key = parseField(condition.Field, dbType)
 		//value 可能为数组什么的
-		condition.Value = parseValue(condition.Value, dbType)
+		//condition.Value = parseValue(condition.Value, dbType)
+		condition.Key = condition.Field
 		qf := &QueryFilter{}
 		GetOperatorI(dbType).BuildQuery(condition, qf)
 		if condition.Joiner == "" {
@@ -181,7 +182,8 @@ func buildWhereConditions(db *gorm.DB, dbType DBType, buildOption *BuilderOption
 }
 
 // 将条件添加到查询中
-func addHavingConditions(db *gorm.DB, dbType DBType, builder *ConditionBuilder) {
+func addHavingConditions(db *gorm.DB, dbType DBType, builder *ConditionBuilder) error {
 	query, args := builder.Build(dbType)
 	*db = *db.Having(query, args...)
+	return nil
 }
